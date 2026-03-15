@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SlideBeam — Pizarra</title>
+<title>PresentaFácil — Pizarra</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <style>
@@ -38,7 +38,6 @@
     --muted: #8888a0;
   }
 
-  /* ── WAITING SCREEN ── */
   #waiting {
     height: 100vh;
     display: flex; flex-direction: column;
@@ -65,8 +64,7 @@
   #qr-wrapper {
     background: #fff;
     padding: 16px; border-radius: 14px;
-    box-shadow: 0 0 40px rgba(0,229,160,0.25),
-                0 0 80px rgba(0,229,160,0.1);
+    box-shadow: 0 0 40px rgba(0,229,160,0.25), 0 0 80px rgba(0,229,160,0.1);
   }
 
   .waiting-info { display: flex; flex-direction: column; gap: 1rem; }
@@ -94,7 +92,6 @@
     text-align: center; margin-top: 0.5rem;
   }
 
-  /* ── PRESENTATION SCREEN ── */
   #presentation {
     display: none;
     height: 100vh; flex-direction: column;
@@ -115,7 +112,6 @@
 
   #pdf-canvas.fading { opacity: 0; }
 
-  /* Laser pointer */
   #laser {
     position: fixed;
     width: 22px; height: 22px;
@@ -129,7 +125,6 @@
     transition: left 0.04s linear, top 0.04s linear;
   }
 
-  /* HUD */
   #hud {
     position: fixed;
     bottom: 0; left: 0; right: 0;
@@ -159,7 +154,6 @@
 
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
-  /* Slide transition overlay */
   #slide-flash {
     position: fixed; inset: 0;
     background: rgba(255,255,255,0.05);
@@ -167,7 +161,6 @@
     z-index: 90;
   }
 
-  /* Connection toast */
   #toast {
     position: fixed; top: 1.5rem; right: 1.5rem;
     background: var(--surface); border: 1px solid var(--border);
@@ -183,23 +176,32 @@
   #toast.green { border-color: var(--accent); color: var(--accent); }
   #toast.red { border-color: var(--danger); color: var(--danger); }
 
-  .fullscreen-hint {
-    font-size: 0.8rem; color: var(--muted); text-align: center;
-    font-family: 'JetBrains Mono', monospace;
+  .btn-fullscreen {
+    background: var(--accent); color: #000;
+    border: none; border-radius: 10px;
+    padding: 0.65rem 1.2rem;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.9rem; font-weight: 700;
+    cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-top: 0.25rem;
   }
+
+  .btn-fullscreen:hover { filter: brightness(1.1); transform: scale(1.02); }
+  .btn-fullscreen:active { transform: scale(0.97); }
 </style>
 </head>
 <body>
 
 <div id="waiting">
-  <div class="logo-display">SlideBeam</div>
+  <div class="logo-display">PresentaFácil</div>
 
   <div class="waiting-row">
     <div id="qr-wrapper"></div>
     <div class="waiting-info">
       <div class="step">
         <div class="step-num">1</div>
-        <span>Abre <strong>slidebeam.app</strong> en tu móvil o escanea el QR</span>
+        <span>Escanea el QR con tu móvil</span>
       </div>
       <div class="step">
         <div class="step-num">2</div>
@@ -210,7 +212,7 @@
         <div class="step-num">3</div>
         <span>Sube tu PDF y empieza a presentar</span>
       </div>
-      <div class="fullscreen-hint">Pulsa <kbd>F</kbd> para pantalla completa</div>
+      <button class="btn-fullscreen" onclick="toggleFullscreen()">⛶ Pantalla completa</button>
     </div>
   </div>
 </div>
@@ -244,7 +246,6 @@ let sessionId = null;
 let socket = null;
 let hudTimer = null;
 
-// ── Init: create session ──
 async function init() {
   const res = await fetch('/api/session', { method: 'POST' });
   const data = await res.json();
@@ -252,7 +253,6 @@ async function init() {
 
   document.getElementById('code-display').textContent = sessionId;
 
-  // Generate QR
   const url = `${window.location.origin}/remote?session=${sessionId}`;
   new QRCode(document.getElementById('qr-wrapper'), {
     text: url,
@@ -267,20 +267,15 @@ async function init() {
 function connectSocket() {
   socket = io();
 
-  socket.on('connect', () => {
-    socket.emit('join-display', { sessionId });
-  });
-
+  socket.on('connect', () => { socket.emit('join-display', { sessionId }); });
   socket.on('joined', () => showToast('🖥️ Pantalla lista', 'green'));
 
-  socket.on('pdf-ready', async ({ pdfData, currentPage: page }) => {
+  socket.on('pdf-ready', async ({ pdfData }) => {
     await loadPDF(pdfData);
     showPresentation();
   });
 
-  socket.on('go-to-page', ({ page }) => {
-    renderPage(page);
-  });
+  socket.on('go-to-page', ({ page }) => { renderPage(page); });
 
   socket.on('laser-move', ({ x, y }) => {
     const laser = document.getElementById('laser');
@@ -291,9 +286,7 @@ function connectSocket() {
     laser.style.top = (rect.top + y * rect.height) + 'px';
   });
 
-  socket.on('laser-off', () => {
-    document.getElementById('laser').style.display = 'none';
-  });
+  socket.on('laser-off', () => { document.getElementById('laser').style.display = 'none'; });
 
   socket.on('set-dark', ({ dark }) => {
     document.body.classList.toggle('light-mode', !dark);
@@ -301,23 +294,18 @@ function connectSocket() {
   });
 
   socket.on('remote-disconnected', () => showToast('📱 Móvil desconectado', 'red'));
-  socket.on('display-disconnected', () => {});
 }
 
-// ── Load PDF ──
 async function loadPDF(base64) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
   pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
   totalPages = pdfDoc.numPages;
   currentPage = 1;
-
   socket.emit('report-pages', { totalPages, currentPage });
 }
 
-// ── Render page ──
 async function renderPage(num) {
   if (!pdfDoc || num < 1 || num > totalPages) return;
   currentPage = num;
@@ -339,15 +327,9 @@ async function renderPage(num) {
   await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
 
   canvas.classList.remove('fading');
-
-  // Flash
   flashSlide();
-
-  // Update HUD
   document.getElementById('hud-pages').textContent = `${num} / ${totalPages}`;
   showHud();
-
-  // Report back to remote
   socket.emit('report-pages', { totalPages, currentPage });
 }
 
@@ -380,17 +362,17 @@ function showToast(msg, type = '') {
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// Keyboard shortcuts
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+}
+
 document.addEventListener('keydown', e => {
-  if (e.key === 'f' || e.key === 'F') {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-    else document.exitFullscreen();
-  }
+  if (e.key === 'f' || e.key === 'F') toggleFullscreen();
   if (e.key === 'ArrowRight' || e.key === ' ') renderPage(currentPage + 1);
   if (e.key === 'ArrowLeft') renderPage(currentPage - 1);
 });
 
-// Load QRCode lib then init
 const qrScript = document.createElement('script');
 qrScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
 qrScript.onload = init;
